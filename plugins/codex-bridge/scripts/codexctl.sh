@@ -47,17 +47,54 @@ for i in range(2,len(sys.argv),2): d[sys.argv[i]]=sys.argv[i+1]
 json.dump(d,open(p,'w'),ensure_ascii=False,indent=1)
 " "$@"; }
 
-latest_run() { ls -1dt "$RUNS_DIR"/*/ 2>/dev/null | head -1 | sed 's:/$::'; }
+# Project root for the current directory: the git top level if there is one, else $PWD.
+current_project() { git rev-parse --show-toplevel 2>/dev/null || pwd; }
 
+# Newest run whose meta field $1 equals $2. Exits 1 when there is no match.
+find_run() {
+python3 - "$RUNS_DIR" "$1" "${2:-}" <<'FIND'
+import json,os,sys
+runs,field,want=sys.argv[1],sys.argv[2],sys.argv[3]
+if not want or not os.path.isdir(runs): sys.exit(1)
+best=None
+for name in os.listdir(runs):
+    meta=os.path.join(runs,name,'meta.json')
+    if not os.path.exists(meta): continue
+    try: d=json.load(open(meta))
+    except Exception: continue
+    if str(d.get(field,'')) != want: continue
+    try: t=int(d.get('started_at') or 0)
+    except Exception: t=0
+    if best is None or t>best[0]: best=(t,os.path.join(runs,name))
+if best is None: sys.exit(1)
+print(best[1])
+FIND
+}
+
+# Picks the run to act on. With no --id the choice is never "whatever ran last on
+# this machine": a run started by another Claude Code session in another project
+# must not be reachable by accident, because resume takes its working directory
+# from the run it continues.
 resolve_run() {
-  local id="${1:-}" r
+  local id="${1:-}" r here rcwd
+  here=$(current_project)
   if [ -n "$id" ]; then
     [ -d "$RUNS_DIR/$id" ] || die "no such run: $id"
-    echo "$RUNS_DIR/$id"
-  else
-    r=$(latest_run); [ -n "$r" ] || die "no runs yet"
-    echo "$r"
+    r="$RUNS_DIR/$id"
+    rcwd=$(json_get "$r/meta.json" cwd)
+    if [ -n "$rcwd" ] && [ "$rcwd" != "$here" ]; then
+      echo "WARNING: run $id belongs to $rcwd, not to $here" >&2
+    fi
+    echo "$r"; return 0
   fi
+  # 1. the newest run started by this Claude Code session
+  if r=$(find_run session_id "${CLAUDE_CODE_SESSION_ID:-}"); then echo "$r"; return 0; fi
+  # 2. failing that, the newest run in the current project
+  if r=$(find_run cwd "$here"); then
+    echo "note: no run from this session, using the newest run of $here" >&2
+    echo "$r"; return 0
+  fi
+  die "no run belongs to this session or to $here — choose one explicitly: codexctl list, then --id <ID>"
 }
 
 human_age() {
@@ -238,7 +275,8 @@ cmd_run() {
     fi
   fi
   json_set "$RUN/meta.json" id "$ID" cwd "$CWD" mode "$MODE" sandbox "$SANDBOX" \
-           baseline_sha "$HEAD_SHA" baseline_tag "$TAG" started_at "$(date +%s)" state starting
+           baseline_sha "$HEAD_SHA" baseline_tag "$TAG" started_at "$(date +%s)" state starting \
+           session_id "${CLAUDE_CODE_SESSION_ID:-}"
 
   echo "run $ID | mode ${MODE} | sandbox ${SANDBOX} | project $CWD"
   [ -n "$TAG" ] && echo "rollback tag: $TAG"
@@ -271,7 +309,8 @@ cmd_resume() {
   json_set "$RUN/meta.json" id "$NEW_ID" cwd "$CWD" mode resume sandbox workspace-write \
            baseline_tag "$(json_get "$OLD/meta.json" baseline_tag)" \
            baseline_sha "$(json_get "$OLD/meta.json" baseline_sha)" \
-           started_at "$(date +%s)" state starting parent "$(basename "$OLD")"
+           started_at "$(date +%s)" state starting parent "$(basename "$OLD")" \
+           session_id "${CLAUDE_CODE_SESSION_ID:-}"
   echo "follow-up $NEW_ID | Codex session $TID | project $CWD"
   echo "---"
   execute_run "$RUN" "$CWD" "workspace-write" "$RUN/prompt.md" "" "$TID"
@@ -345,11 +384,16 @@ cmd_cancel() {
 
 cmd_list() {
   [ -d "$RUNS_DIR" ] || { echo "no runs yet"; return 0; }
-  local d
+  local d here; here=$(current_project)
+  echo "  * this session   . this project"
   for d in $(ls -1dt "$RUNS_DIR"/*/ 2>/dev/null | head -10); do
     d=${d%/}
-    local st; st=$(json_get "$d/meta.json" state); st=${st:-"(pre-codexctl)"}
-    printf '%-46s %-13s %s\n' "$(basename "$d")" "$st" "$(json_get "$d/meta.json" cwd)"
+    local st mark=" "
+    st=$(json_get "$d/meta.json" state); st=${st:-"(pre-codexctl)"}
+    [ "$(json_get "$d/meta.json" cwd)" = "$here" ] && mark="."
+    [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && \
+      [ "$(json_get "$d/meta.json" session_id)" = "$CLAUDE_CODE_SESSION_ID" ] && mark="*"
+    printf '%s %-46s %-13s %s\n' "$mark" "$(basename "$d")" "$st" "$(json_get "$d/meta.json" cwd)"
   done
 }
 

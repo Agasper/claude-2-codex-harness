@@ -51,7 +51,17 @@ codexctl cancel  [--id ID]
 codexctl list
 ```
 
-Without `--id`, commands act on the most recent run. Each run is stored under `~/.claude/codex-runs/<id>/`: the spec, the event log, the final answer and metadata.
+Each run is stored under `~/.claude/codex-runs/<id>/`: the spec, the event log, the final answer and metadata.
+
+### Which run a command acts on
+
+`--id` is optional. Without it, `status`, `result`, `cancel` and `resume` resolve the target in this order:
+
+1. the newest run **started by the current Claude Code session**;
+2. failing that, the newest run **in the current project** (git top level, or the working directory);
+3. failing both, the command refuses and tells you to pick a run with `codexctl list`.
+
+This matters most for `resume`, which has no working-directory flag of its own: it inherits the directory of the run it continues, so choosing a run *is* choosing a project. A plain "most recent run on this machine" would mean that a second Claude Code session, working on a different repository, could silently steer your follow-up into that repository — with write access. The session binding closes that off, and `codexctl list` marks runs from this session with `*` and runs from this project with `.`.
 
 ## What Codex is allowed to do
 

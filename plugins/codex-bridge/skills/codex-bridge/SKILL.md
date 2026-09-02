@@ -31,7 +31,9 @@ codexctl list
 
 If `codexctl` is not on PATH (`/codex-bridge:setup` was never run), call it by full path — `"${CLAUDE_PLUGIN_ROOT}/scripts/codexctl.sh"` — and suggest the user run `/codex-bridge:setup` once.
 
-Without `--id` the commands act on the most recent run. Sandbox, network and `.git` access, stripping of Claude Code variables, the rollback tag and the event log are all handled inside; there is no need to bring them up on every run.
+`--id` is optional and normally unnecessary: `status`, `result`, `cancel` and `resume` pick the newest run **started by this session**, falling back to the newest run of the current project, and refusing outright when neither matches. Do not pass a working directory — there is no flag for it, and the binding is automatic on purpose. Reach for `--id` only when the user names a specific earlier run.
+
+Sandbox, network and `.git` access, stripping of Claude Code variables, the rollback tag and the event log are all handled inside; there is no need to bring them up on every run.
 
 ## How to launch
 
