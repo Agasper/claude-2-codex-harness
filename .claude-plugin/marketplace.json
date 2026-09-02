@@ -1,0 +1,13 @@
+{
+  "name": "claude-2-codex-harness",
+  "owner": {
+    "name": "Agasper"
+  },
+  "plugins": [
+    {
+      "name": "codex-bridge",
+      "source": "./plugins/codex-bridge",
+      "description": "Делегирование работы Codex CLI из Claude Code: фиксированные режимы запуска, живой статус, приёмка результата, ревью и дозадачи"
+    }
+  ]
+}
