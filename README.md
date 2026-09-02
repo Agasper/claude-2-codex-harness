@@ -1,5 +1,9 @@
 # claude-2-codex-harness
 
+<p align="center">
+  <img src="assets/hero.png" alt="Claude Code walking Codex on a leash" width="640">
+</p>
+
 A [Claude Code](https://claude.com/claude-code) plugin that hands implementation work to the [Codex CLI](https://developers.openai.com/codex/cli/) and brings the result back in a form you can actually act on.
 
 The division of labour: Claude does design, research and review; Codex writes the code against a finished spec. This plugin owns the mechanics of that handoff.
