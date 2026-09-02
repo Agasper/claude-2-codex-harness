@@ -1,5 +1,5 @@
 ---
-description: Что сейчас делает Codex — работает, застрял или закончил
+description: What Codex is doing right now — running, stuck, or finished
 ---
 
-Выполни `"${CLAUDE_PLUGIN_ROOT}/scripts/codexctl.sh" status` и перескажи результат человеческим языком: что происходит, сколько идёт, есть ли признаки зависания. Если состояние МОЛЧИТ, УПАЛ или ОБОРВАЛСЯ — скажи это прямо и предложи, что делать.
+Run `"${CLAUDE_PLUGIN_ROOT}/scripts/codexctl.sh" status` and relay the result in plain language: what is happening, how long it has been going, whether there are signs of a hang. If the state is SILENT, FAILED or TRUNCATED, say so directly and suggest what to do next.

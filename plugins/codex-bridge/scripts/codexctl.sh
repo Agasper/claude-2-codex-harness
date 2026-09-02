@@ -1,36 +1,37 @@
 #!/usr/bin/env bash
-# codexctl — единственная точка запуска Codex из Claude Code.
-# Все флаги codex зашиты здесь. Вызывающему доступны только режимы ниже.
+# codexctl — the single entry point for running Codex from Claude Code.
+# Every codex flag is baked in here. Callers only get the modes below.
 set -uo pipefail
 
 RUNS_DIR="${CODEX_RUNS_DIR:-$HOME/.claude/codex-runs}"
 STALL_SECONDS="${CODEX_STALL_SECONDS:-180}"
 
-die() { echo "ОШИБКА: $*" >&2; exit 2; }
+die() { echo "ERROR: $*" >&2; exit 2; }
 
 usage() {
   cat <<'USAGE'
-codexctl — запуск Codex с фиксированными режимами.
+codexctl — run Codex through a fixed set of modes.
 
   codexctl run     --cwd DIR (--prompt TEXT | --prompt-file F) [--model M]
-      Задача с правом записи. Блокирует до конца — запускать в фоне.
+      Task with write access. Blocks until done — run it in the background.
 
   codexctl review  --cwd DIR [--base REF] [--prompt TEXT] [--model M]
-      Ревью без права записи. Блокирует до конца — запускать в фоне.
+      Review with no write access. Blocks until done — run it in the background.
 
   codexctl resume  --id ID (--prompt TEXT | --prompt-file F)
-      Дозадача в ту же сессию Codex. Блокирует до конца.
+      Follow-up in the same Codex session. Blocks until done.
 
-  codexctl status  [--id ID]      Состояние прогона: работает / молчит / готов / упал.
-  codexctl result  [--id ID]      Итог: ответ Codex и что изменилось в репозитории.
-  codexctl cancel  [--id ID]      Остановить прогон.
-  codexctl list                   Последние прогоны.
+  codexctl status  [--id ID]      Run state: running / silent / done / failed.
+  codexctl result  [--id ID]      Outcome: Codex's answer and what changed in the repo.
+  codexctl cancel  [--id ID]      Stop a run.
+  codexctl list                   Recent runs.
 
-Других флагов нет. Песочница, сеть, доступ к .git и фильтрация окружения — внутри.
+There are no other flags. Sandbox, network, .git access and environment
+filtering are handled inside.
 USAGE
 }
 
-# ---------- общие помощники ----------
+# ---------- helpers ----------
 
 json_get() { python3 -c "
 import json,sys
@@ -51,24 +52,24 @@ latest_run() { ls -1dt "$RUNS_DIR"/*/ 2>/dev/null | head -1 | sed 's:/$::'; }
 resolve_run() {
   local id="${1:-}" r
   if [ -n "$id" ]; then
-    [ -d "$RUNS_DIR/$id" ] || die "прогон не найден: $id"
+    [ -d "$RUNS_DIR/$id" ] || die "no such run: $id"
     echo "$RUNS_DIR/$id"
   else
-    r=$(latest_run); [ -n "$r" ] || die "прогонов ещё не было"
+    r=$(latest_run); [ -n "$r" ] || die "no runs yet"
     echo "$r"
   fi
 }
 
 human_age() {
   local s=$1
-  if   [ "$s" -lt 60 ]   ; then echo "${s}с"
-  elif [ "$s" -lt 3600 ] ; then echo "$((s/60))м $((s%60))с"
-  else echo "$((s/3600))ч $(((s%3600)/60))м"; fi
+  if   [ "$s" -lt 60 ]   ; then echo "${s}s"
+  elif [ "$s" -lt 3600 ] ; then echo "$((s/60))m $((s%60))s"
+  else echo "$((s/3600))h $(((s%3600)/60))m"; fi
 }
 
 mtime() { stat -f %m "$1" 2>/dev/null || echo 0; }
 
-# Печатает события из jsonl начиная со строки $2 (1-based). Возвращает число обработанных строк.
+# Prints events from the jsonl log starting at line $2, then the total line count.
 print_events() {
 python3 - "$1" "$2" <<'PY'
 import json,sys,time
@@ -84,15 +85,15 @@ for i,line in enumerate(lines[start:],start=start):
     ts=time.strftime('%H:%M:%S')
     if kind in ('agent_message','AgentMessage'):
         txt=(it.get('text') or '').replace('\n',' ')[:150]
-        print(f"[{ts}] думает  {txt}",flush=True)
+        print(f"[{ts}] thinks  {txt}",flush=True)
     elif kind in ('command_execution','CommandExecution'):
         cmd=it.get('command')
         if isinstance(cmd,list): cmd=' '.join(cmd[-1:])
         cmd=(str(cmd or '')).replace('\n',' ')[:150]
-        print(f"[{ts}] команда {cmd}",flush=True)
+        print(f"[{ts}] runs    {cmd}",flush=True)
     elif kind in ('file_change','FileChange'):
         n=len(it.get('changes') or it.get('files') or [])
-        print(f"[{ts}] правка  файлов: {n if n else '?'}",flush=True)
+        print(f"[{ts}] edits   files: {n if n else '?'}",flush=True)
 print(f"__LINES__{len(lines)}")
 PY
 }
@@ -109,10 +110,10 @@ for line in open(sys.argv[1],encoding='utf-8',errors='replace'):
 
 has_turn_completed() { grep -q '"type":"turn.completed"' "$1" 2>/dev/null; }
 
-# Список -u для вырезания переменных Claude Code из окружения Codex
+# -u flags stripping Claude Code variables from the environment Codex inherits
 unset_flags() { env | grep -oE '^CLAUDE[A-Z_]*' | sed 's/^/-u /' | tr '\n' ' '; }
 
-# ---------- ядро: один прогон ----------
+# ---------- core: a single run ----------
 
 # execute_run <run_dir> <cwd> <sandbox> <prompt_file> <model> <resume_thread|"">
 execute_run() {
@@ -120,8 +121,8 @@ execute_run() {
   local args=()
 
   if [ -n "$RESUME" ]; then
-    # У `codex exec resume` нет --cd и нет -s: рабочий каталог задаётся через cd,
-    # песочница — только через -c. Проверено 02.09.2026, не «упрощать» обратно.
+    # `codex exec resume` has no --cd and no -s: the working directory comes from
+    # cd, the sandbox only from -c. Verified 2026-09-02, do not "simplify" back.
     args=(exec resume --json -c "sandbox_mode=\"$SANDBOX\"")
   else
     args=(exec --json --cd "$CWD" -s "$SANDBOX")
@@ -135,7 +136,7 @@ execute_run() {
   [ -n "$RESUME" ] && args+=("$RESUME")
   args+=(-)
 
-  echo "запуск: codex ${args[*]}" > "$RUN/cmd.txt"
+  echo "launching: codex ${args[*]}" > "$RUN/cmd.txt"
 
   # shellcheck disable=SC2046
   ( cd "$CWD" && exec env $(unset_flags) codex "${args[@]}" ) \
@@ -150,7 +151,7 @@ execute_run() {
     line=$(echo "$out" | sed -n 's/^__LINES__//p' | tail -1); line=${line:-0}
     local age=$(( $(date +%s) - $(mtime "$RUN/run.jsonl") ))
     if [ "$age" -gt "$STALL_SECONDS" ] && [ "$warned" -eq 0 ]; then
-      echo "[!] Codex молчит уже $(human_age "$age") — возможно, застрял. Проверь: codexctl status"
+      echo "[!] Codex has been silent for $(human_age "$age") — it may be stuck. Check: codexctl status"
       warned=1
     elif [ "$age" -le "$STALL_SECONDS" ]; then warned=0; fi
     sleep 3
@@ -169,12 +170,12 @@ execute_run() {
 
   echo
   case "$state" in
-    done)       echo "ИТОГ: Codex завершил работу штатно." ;;
-    failed)     echo "ИТОГ: Codex завершился с ошибкой (код $code). Хвост err.log:"; tail -5 "$RUN/err.log" ;;
-    incomplete) echo "ИТОГ: Codex оборвался, не закончив ход. Хвост err.log:"; tail -5 "$RUN/err.log" ;;
+    done)       echo "OUTCOME: Codex finished normally." ;;
+    failed)     echo "OUTCOME: Codex exited with an error (code $code). Tail of err.log:"; tail -5 "$RUN/err.log" ;;
+    incomplete) echo "OUTCOME: Codex was cut off mid-turn. Tail of err.log:"; tail -5 "$RUN/err.log" ;;
   esac
   summarize_changes "$RUN"
-  echo "ID прогона: $(basename "$RUN")"
+  echo "run id: $(basename "$RUN")"
   [ "$state" = "done" ] && return 0 || return 1
 }
 
@@ -186,10 +187,10 @@ summarize_changes() {
   dirty=$(git -C "$CWD" status --short 2>/dev/null | wc -l | tr -d ' ')
   commits=0
   [ -n "$BASE" ] && commits=$(git -C "$CWD" rev-list --count "$BASE"..HEAD 2>/dev/null || echo 0)
-  echo "изменения: незакоммиченных файлов $dirty, новых коммитов $commits (от метки ${BASE:-—})"
+  echo "changes: $dirty uncommitted file(s), $commits new commit(s) since ${BASE:-—}"
 }
 
-# ---------- режимы ----------
+# ---------- modes ----------
 
 cmd_run() {
   local CWD="" PROMPT="" PROMPT_FILE="" MODEL="" SANDBOX="workspace-write" MODE="run" BASE=""
@@ -201,30 +202,31 @@ cmd_run() {
       --model) MODEL="$2"; shift 2;;
       --base) BASE="$2"; shift 2;;
       --readonly) SANDBOX="read-only"; MODE="review"; shift;;
-      *) die "неизвестный флаг: $1 (см. codexctl --help)";;
+      *) die "unknown flag: $1 (see codexctl --help)";;
     esac
   done
-  [ -n "$CWD" ] || die "нужен --cwd"
-  [ -d "$CWD" ] || die "каталог не существует: $CWD"
+  [ -n "$CWD" ] || die "--cwd is required"
+  [ -d "$CWD" ] || die "no such directory: $CWD"
   CWD=$(cd "$CWD" && pwd)
-  command -v codex >/dev/null 2>&1 || die "codex не установлен"
+  command -v codex >/dev/null 2>&1 || die "codex is not installed"
 
   local ID RUN
   ID="$(basename "$CWD")-$(date +%Y%m%d-%H%M%S)"
   RUN="$RUNS_DIR/$ID"; mkdir -p "$RUN"
 
   if [ -n "$PROMPT_FILE" ]; then
-    [ -f "$PROMPT_FILE" ] || die "файл не найден: $PROMPT_FILE"
+    [ -f "$PROMPT_FILE" ] || die "no such file: $PROMPT_FILE"
     cp "$PROMPT_FILE" "$RUN/prompt.md"
   elif [ -n "$PROMPT" ]; then
     printf '%s\n' "$PROMPT" > "$RUN/prompt.md"
-  else die "нужен --prompt или --prompt-file"; fi
+  else die "--prompt or --prompt-file is required"; fi
 
   if [ "$MODE" = "review" ]; then
-    local target="незакоммиченные изменения"
-    [ -n "$BASE" ] && target="изменения относительно ветки $BASE"
-    { echo; echo "Отревьюй $target. Ничего не исправляй — только перечисли найденные проблемы,"
-      echo "по каждой: файл и строка, суть, почему это ошибка. Если проблем нет — так и скажи."; } >> "$RUN/prompt.md"
+    local target="the uncommitted changes"
+    [ -n "$BASE" ] && target="the changes relative to branch $BASE"
+    { echo; echo "Review $target. Do not fix anything — only list the problems you find,"
+      echo "each with file and line, what is wrong, and why it is a defect."
+      echo "If there are no problems, say so."; } >> "$RUN/prompt.md"
   fi
 
   local HEAD_SHA="" TAG=""
@@ -238,8 +240,8 @@ cmd_run() {
   json_set "$RUN/meta.json" id "$ID" cwd "$CWD" mode "$MODE" sandbox "$SANDBOX" \
            baseline_sha "$HEAD_SHA" baseline_tag "$TAG" started_at "$(date +%s)" state starting
 
-  echo "прогон $ID | режим ${MODE} | песочница ${SANDBOX} | проект $CWD"
-  [ -n "$TAG" ] && echo "метка отката: $TAG"
+  echo "run $ID | mode ${MODE} | sandbox ${SANDBOX} | project $CWD"
+  [ -n "$TAG" ] && echo "rollback tag: $TAG"
   echo "---"
   execute_run "$RUN" "$CWD" "$SANDBOX" "$RUN/prompt.md" "$MODEL" ""
 }
@@ -251,12 +253,12 @@ cmd_resume() {
       --id) ID="$2"; shift 2;;
       --prompt) PROMPT="$2"; shift 2;;
       --prompt-file) PROMPT_FILE="$2"; shift 2;;
-      *) die "неизвестный флаг: $1";;
+      *) die "unknown flag: $1";;
     esac
   done
   local OLD; OLD=$(resolve_run "$ID") || exit 2
   local TID; TID=$(json_get "$OLD/meta.json" thread_id)
-  [ -n "$TID" ] || die "у прогона $(basename "$OLD") нет thread_id — продолжать нечего"
+  [ -n "$TID" ] || die "run $(basename "$OLD") has no thread_id — nothing to continue"
   local CWD; CWD=$(json_get "$OLD/meta.json" cwd)
 
   local NEW_ID RUN
@@ -264,13 +266,13 @@ cmd_resume() {
   RUN="$RUNS_DIR/$NEW_ID"; mkdir -p "$RUN"
   if [ -n "$PROMPT_FILE" ]; then cp "$PROMPT_FILE" "$RUN/prompt.md"
   elif [ -n "$PROMPT" ]; then printf '%s\n' "$PROMPT" > "$RUN/prompt.md"
-  else die "нужен --prompt или --prompt-file"; fi
+  else die "--prompt or --prompt-file is required"; fi
 
   json_set "$RUN/meta.json" id "$NEW_ID" cwd "$CWD" mode resume sandbox workspace-write \
            baseline_tag "$(json_get "$OLD/meta.json" baseline_tag)" \
            baseline_sha "$(json_get "$OLD/meta.json" baseline_sha)" \
            started_at "$(date +%s)" state starting parent "$(basename "$OLD")"
-  echo "продолжение $NEW_ID | сессия Codex $TID | проект $CWD"
+  echo "follow-up $NEW_ID | Codex session $TID | project $CWD"
   echo "---"
   execute_run "$RUN" "$CWD" "workspace-write" "$RUN/prompt.md" "" "$TID"
 }
@@ -283,47 +285,47 @@ cmd_status() {
   started=$(json_get "$RUN/meta.json" started_at); now=$(date +%s)
   log_age=$(( now - $(mtime "$RUN/run.jsonl") ))
 
-  local alive=нет
-  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive=да
+  local alive=no
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && alive=yes
 
   local verdict
-  if [ "$alive" = "да" ]; then
-    if [ "$log_age" -gt "$STALL_SECONDS" ]; then verdict="МОЛЧИТ — нет событий $(human_age "$log_age"), возможно застрял"
-    else verdict="РАБОТАЕТ — последнее событие $(human_age "$log_age") назад"; fi
+  if [ "$alive" = "yes" ]; then
+    if [ "$log_age" -gt "$STALL_SECONDS" ]; then verdict="SILENT — no events for $(human_age "$log_age"), possibly stuck"
+    else verdict="RUNNING — last event $(human_age "$log_age") ago"; fi
   else
     case "$state" in
-      done) verdict="ГОТОВ — завершился штатно";;
-      failed) verdict="УПАЛ — код $(json_get "$RUN/meta.json" exit_code)";;
-      incomplete) verdict="ОБОРВАЛСЯ — не закончил ход";;
-      cancelled) verdict="ОТМЕНЁН";;
-      *) verdict="ПРОЦЕССА НЕТ, итог не записан — прогон оборван внешне";;
+      done) verdict="DONE — finished normally";;
+      failed) verdict="FAILED — exit code $(json_get "$RUN/meta.json" exit_code)";;
+      incomplete) verdict="TRUNCATED — cut off mid-turn";;
+      cancelled) verdict="CANCELLED";;
+      *) verdict="NO PROCESS, no outcome recorded — killed from outside";;
     esac
   fi
 
-  echo "прогон:    $(basename "$RUN")"
-  echo "состояние: $verdict"
-  echo "идёт:      $(human_age $(( now - ${started:-$now} )))"
-  echo "проект:    $(json_get "$RUN/meta.json" cwd)"
-  echo "последнее:"
+  echo "run:      $(basename "$RUN")"
+  echo "state:    $verdict"
+  echo "elapsed:  $(human_age $(( now - ${started:-$now} )))"
+  echo "project:  $(json_get "$RUN/meta.json" cwd)"
+  echo "latest:"
   print_events "$RUN/run.jsonl" "$(( $(wc -l < "$RUN/run.jsonl" 2>/dev/null || echo 0) - 6 ))" 2>/dev/null \
     | grep -v '^__LINES__' | tail -5 | sed 's/^/  /'
-  echo "лог:       $RUN/run.jsonl"
+  echo "log:      $RUN/run.jsonl"
 }
 
 cmd_result() {
   local ID=""; [ "${1:-}" = "--id" ] && ID="$2"
   local RUN; RUN=$(resolve_run "$ID") || exit 2
-  echo "прогон: $(basename "$RUN") | состояние: $(json_get "$RUN/meta.json" state)"
-  echo "--- ответ Codex ---"
-  if [ -s "$RUN/final.md" ]; then cat "$RUN/final.md"; else echo "(пусто — Codex не дал финального ответа)"; fi
+  echo "run: $(basename "$RUN") | state: $(json_get "$RUN/meta.json" state)"
+  echo "--- Codex's answer ---"
+  if [ -s "$RUN/final.md" ]; then cat "$RUN/final.md"; else echo "(empty — Codex produced no final answer)"; fi
   echo
   summarize_changes "$RUN"
   local CWD BASE; CWD=$(json_get "$RUN/meta.json" cwd); BASE=$(json_get "$RUN/meta.json" baseline_tag)
   if [ -d "$CWD/.git" ]; then
-    echo "--- изменённые файлы ---"; git -C "$CWD" status --short | head -40
+    echo "--- changed files ---"; git -C "$CWD" status --short | head -40
     if [ -n "$BASE" ]; then
       local n; n=$(git -C "$CWD" rev-list --count "$BASE"..HEAD 2>/dev/null || echo 0)
-      [ "$n" != "0" ] && { echo "--- коммиты Codex ---"; git -C "$CWD" log --oneline "$BASE"..HEAD; }
+      [ "$n" != "0" ] && { echo "--- commits by Codex ---"; git -C "$CWD" log --oneline "$BASE"..HEAD; }
     fi
   fi
 }
@@ -335,23 +337,23 @@ cmd_cancel() {
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null
     json_set "$RUN/meta.json" state cancelled
-    echo "прогон $(basename "$RUN") остановлен"
+    echo "run $(basename "$RUN") stopped"
   else
-    echo "прогон $(basename "$RUN") уже не выполняется (состояние: $(json_get "$RUN/meta.json" state))"
+    echo "run $(basename "$RUN") is not active (state: $(json_get "$RUN/meta.json" state))"
   fi
 }
 
 cmd_list() {
-  [ -d "$RUNS_DIR" ] || { echo "прогонов ещё не было"; return 0; }
+  [ -d "$RUNS_DIR" ] || { echo "no runs yet"; return 0; }
   local d
   for d in $(ls -1dt "$RUNS_DIR"/*/ 2>/dev/null | head -10); do
     d=${d%/}
-    local st; st=$(json_get "$d/meta.json" state); st=${st:-«до codexctl»}
+    local st; st=$(json_get "$d/meta.json" state); st=${st:-"(pre-codexctl)"}
     printf '%-46s %-13s %s\n' "$(basename "$d")" "$st" "$(json_get "$d/meta.json" cwd)"
   done
 }
 
-# ---------- диспетчер ----------
+# ---------- dispatch ----------
 case "${1:-}" in
   run)    shift; cmd_run "$@";;
   review) shift; cmd_run --readonly "$@";;
@@ -361,5 +363,5 @@ case "${1:-}" in
   cancel) shift; cmd_cancel "$@";;
   list)   shift; cmd_list "$@";;
   -h|--help|help|"") usage;;
-  *) die "неизвестный режим: $1";;
+  *) die "unknown mode: $1";;
 esac

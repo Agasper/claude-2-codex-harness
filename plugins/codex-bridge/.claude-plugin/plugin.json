@@ -1,6 +1,6 @@
 {
   "name": "codex-bridge",
-  "description": "Делегирование работы Codex CLI: фиксированные режимы запуска, живой статус, приёмка результата, ревью и дозадачи",
+  "description": "Delegate implementation work to the Codex CLI: fixed launch modes, live status, result acceptance, reviews and follow-ups",
   "version": "1.0.0",
   "author": {
     "name": "Agasper"

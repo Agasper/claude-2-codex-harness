@@ -53,8 +53,6 @@ codexctl list
 
 Without `--id`, commands act on the most recent run. Each run is stored under `~/.claude/codex-runs/<id>/`: the spec, the event log, the final answer and metadata.
 
-Note that the plugin's own interface — the skill, the slash commands and `codexctl` output — is in Russian.
-
 ## What Codex is allowed to do
 
 Everything below was established by experiment, not read off a documentation page.

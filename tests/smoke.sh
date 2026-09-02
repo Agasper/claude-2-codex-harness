@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Быстрые проверки codexctl, не требующие вызова Codex и не тратящие лимиты.
+# Fast codexctl checks that need no Codex call and burn no usage limits.
 set -uo pipefail
 CTL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../plugins/codex-bridge/scripts" && pwd)/codexctl.sh"
 fails=0
 
-check() { # описание, ожидаемый код, команда...
+check() { # description, expected exit code, command...
   local desc="$1" want="$2"; shift 2
   local out code
   out=$("$@" 2>&1); code=$?
   if [ "$code" -eq "$want" ]; then printf '  ✓ %s\n' "$desc"
-  else printf '  ✗ %s (код %s, ожидался %s)\n     %s\n' "$desc" "$code" "$want" "$(echo "$out" | head -1)"; fails=1; fi
+  else printf '  ✗ %s (exit %s, expected %s)\n     %s\n' "$desc" "$code" "$want" "$(echo "$out" | head -1)"; fails=1; fi
 }
 
-echo "smoke-тесты codexctl:"
-bash -n "$CTL" && echo "  ✓ синтаксис" || { echo "  ✗ синтаксис"; fails=1; }
-check "справка без аргументов"            0 bash "$CTL"
-check "несуществующий режим отвергается"  2 bash "$CTL" такого-нет
-check "неизвестный флаг отвергается"      2 bash "$CTL" run --cwd /tmp --нетфлага
-check "run без --cwd отвергается"         2 bash "$CTL" run --prompt x
-check "run без промпта отвергается"       2 bash "$CTL" run --cwd /tmp
-check "несуществующий каталог отвергается" 2 bash "$CTL" run --cwd /нет/такого --prompt x
-check "несуществующий прогон отвергается" 2 bash "$CTL" status --id нет-такого-прогона
+echo "codexctl smoke tests:"
+bash -n "$CTL" && echo "  ✓ syntax" || { echo "  ✗ syntax"; fails=1; }
+check "usage with no arguments"        0 bash "$CTL"
+check "unknown mode is rejected"       2 bash "$CTL" no-such-mode
+check "unknown flag is rejected"       2 bash "$CTL" run --cwd /tmp --nosuchflag
+check "run without --cwd is rejected"  2 bash "$CTL" run --prompt x
+check "run without a prompt is rejected" 2 bash "$CTL" run --cwd /tmp
+check "missing directory is rejected"  2 bash "$CTL" run --cwd /no/such/path --prompt x
+check "unknown run id is rejected"     2 bash "$CTL" status --id no-such-run
 
 echo
-[ "$fails" -eq 0 ] && echo "всё зелёное" || echo "есть падения"
+[ "$fails" -eq 0 ] && echo "all green" || echo "failures present"
 exit "$fails"

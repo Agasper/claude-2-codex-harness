@@ -1,8 +1,8 @@
 ---
-description: Ревью текущих изменений силами Codex (без права записи)
-argument-hint: [--base <ветка>] [на что обратить внимание]
+description: Have Codex review the current changes (no write access)
+argument-hint: [--base <branch>] [what to focus on]
 ---
 
-Загрузи скилл `codex-bridge` и запусти ревью через `codexctl review` в фоне, затем разбери найденное: что реальная проблема, а что шум.
+Load the `codex-bridge` skill, start the review via `codexctl review` in the background, then triage what it found: which items are real defects and which are noise.
 
-Аргументы: $ARGUMENTS
+Arguments: $ARGUMENTS

@@ -1,8 +1,8 @@
 ---
-description: Отдать задачу Codex (с правом записи) и принять результат
-argument-hint: <задача или путь к документу со спекой>
+description: Hand a task to Codex (with write access) and accept the result
+argument-hint: <task, or path to a spec document>
 ---
 
-Загрузи скилл `codex-bridge` и отработай по нему: подготовка, запуск через `codexctl run` в фоне, наблюдение, приёмка с проверкой изменений. Ревью не запускай — только напомни о нём в конце.
+Load the `codex-bridge` skill and work through it: preparation, launch via `codexctl run` in the background, monitoring, acceptance with a check of the actual changes. Do not start a review — only remind about it at the end.
 
-Задача: $ARGUMENTS
+Task: $ARGUMENTS

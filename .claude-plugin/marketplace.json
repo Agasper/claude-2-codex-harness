@@ -7,7 +7,7 @@
     {
       "name": "codex-bridge",
       "source": "./plugins/codex-bridge",
-      "description": "Делегирование работы Codex CLI из Claude Code: фиксированные режимы запуска, живой статус, приёмка результата, ревью и дозадачи"
+      "description": "Delegate implementation work to the Codex CLI from Claude Code: fixed launch modes, live status, result acceptance, reviews and follow-ups"
     }
   ]
 }

@@ -1,5 +1,5 @@
 ---
-description: Проверить окружение и установить codexctl в PATH
+description: Check prerequisites and install codexctl on PATH
 ---
 
-Выполни `"${CLAUDE_PLUGIN_ROOT}/scripts/install.sh"` и разбери вывод: что готово, чего не хватает. Если чего-то нет — подскажи конкретную команду для установки, не пересказывая весь вывод.
+Run `"${CLAUDE_PLUGIN_ROOT}/scripts/install.sh"` and interpret the output: what is ready, what is missing. If something is missing, give the exact command to fix it rather than repeating the whole output.

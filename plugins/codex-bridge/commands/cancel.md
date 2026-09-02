@@ -1,5 +1,5 @@
 ---
-description: Остановить текущий прогон Codex
+description: Stop the current Codex run
 ---
 
-Выполни `"${CLAUDE_PLUGIN_ROOT}/scripts/codexctl.sh" cancel` и доложи, что именно остановлено и в каком состоянии осталось рабочее дерево.
+Run `"${CLAUDE_PLUGIN_ROOT}/scripts/codexctl.sh" cancel` and report what exactly was stopped and what state the working tree is left in.
