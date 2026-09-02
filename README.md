@@ -6,7 +6,7 @@
 
 A [Claude Code](https://claude.com/claude-code) plugin that hands implementation work to the [Codex CLI](https://developers.openai.com/codex/cli/) and brings the result back in a form you can actually act on.
 
-The division of labour: Claude does design, research and review; Codex writes the code against a finished spec. This plugin owns the mechanics of that handoff.
+The plugin owns the mechanics of the handoff: launching Codex, watching the run, and taking the result back in a reviewable form. It deliberately does **not** decide which work goes to Codex — that split is yours to define.
 
 ## Why it exists
 
@@ -17,6 +17,29 @@ You can call Codex from Claude Code by hand, with `codex exec`. In practice that
 **Runs get lost.** A process started with `nohup` or `&` is detached from the session: no completion notification, no visible status, and both sides keep waiting on work that finished long ago. Here a run always stays a child process, writes a structured event log, and reports back.
 
 **You cannot tell a working run from a stuck one.** "The process is alive" tells you nothing. `codexctl status` distinguishes five outcomes: **RUNNING**, **SILENT** (no events for over three minutes), **DONE**, **FAILED**, and **TRUNCATED** — Codex died mid-turn.
+
+## Deciding what goes to Codex
+
+The plugin is neutral about roles. It gives you a reliable way to run Codex and read the outcome; the policy of *when* to reach for it lives in your own `CLAUDE.md`, where Claude Code reads it at the start of every session.
+
+A rule that keeps design with Claude and implementation with Codex:
+
+```markdown
+# Working with Codex
+- A task explained in chat → do it yourself.
+- A task that arrives as a document or spec → hand it to Codex.
+- An explicit "use Codex" or "do it yourself" overrides both.
+```
+
+The opposite split works just as well — Codex reasons about the design, Claude writes the code:
+
+```markdown
+# Working with Codex
+- Before implementing anything non-trivial, have Codex review the approach
+  (`codexctl review`) and write the code yourself once it holds up.
+```
+
+Neither rule is built in. Without one, the plugin simply waits to be asked.
 
 ## Install
 

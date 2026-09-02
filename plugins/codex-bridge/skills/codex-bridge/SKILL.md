@@ -5,7 +5,7 @@ description: Delegating implementation work to the Codex CLI through codexctl �
 
 # Codex through codexctl
 
-Design, research and review stay with me; writing code against a spec goes to Codex. Codex is launched **only** through `codexctl`.
+This skill covers handing a task to Codex and taking the result back. It does not decide **which** work goes to Codex — that split belongs in the user's own instructions (`CLAUDE.md`), and different people set it up differently. What is fixed here is the mechanics: Codex is launched **only** through `codexctl`.
 
 ## Hard rule: never invoke `codex` directly
 
@@ -57,16 +57,16 @@ Note that DONE does not mean "did the work". Codex can finish normally while rep
 
 ## Discipline around a run
 
-1. **The spec.** If the user supplied a document, pass `--prompt-file` pointing at it and do not paraphrase its contents. If the spec came out of our conversation, write it myself, **show it to the user and wait for confirmation**, then launch. That is the only point where a misunderstanding is still free to fix.
+1. **The spec.** If the user supplied a document, pass `--prompt-file` pointing at it and do not paraphrase its contents. If the spec came out of the conversation, write it up, **show it to the user and wait for confirmation**, then launch. That is the only point where a misunderstanding is still free to fix.
 2. **A clean tree.** If the project has uncommitted changes, say so before launching: otherwise acceptance cannot separate Codex's work from what was already there. The rollback tag is created by `codexctl` itself.
 3. **Acceptance.** Run `codexctl result`, then `git diff` against the tag. If Codex claims the tests pass, find the corresponding command and its output in the run log. Its word alone is not evidence.
-4. **Review is never automatic.** After acceptance, report the outcome and remind the user about review, asking who should do it — me or `codexctl review`. A "no" closes the topic immediately.
+4. **Review is never automatic.** After acceptance, report the outcome and remind the user about review, asking who should do it — you or `codexctl review`. A "no" closes the topic immediately. Running a review costs usage limits, so it is always the user's call.
 
 ## Do not
 
 - Invoke `codex` directly or improvise flags.
 - Launch through `nohup` / `&` / `disown`.
 - Commit or push Codex's work without being asked.
-- Hand Codex a task that was explained in chat — that one is mine.
+- Delegate to Codex on your own initiative when the user's instructions do not call for it.
 - Report "done" without looking at the changes.
 - Recite the built-in safeguards (sandbox, environment filtering, tags) to the user — they work on their own.
