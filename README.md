@@ -1,43 +1,43 @@
 # claude-2-codex-harness
 
-Плагин для [Claude Code](https://claude.com/claude-code), который отдаёт написание кода [Codex CLI](https://developers.openai.com/codex/cli/) и возвращает результат в понятном виде.
+A [Claude Code](https://claude.com/claude-code) plugin that hands implementation work to the [Codex CLI](https://developers.openai.com/codex/cli/) and brings the result back in a form you can actually act on.
 
-Идея разделения труда: проектирование, ресёрч и ревью остаются за Claude, а реализацию по готовой спецификации выполняет Codex. Плагин закрывает механику этой передачи.
+The division of labour: Claude does design, research and review; Codex writes the code against a finished spec. This plugin owns the mechanics of that handoff.
 
-## Зачем он нужен
+## Why it exists
 
-Codex можно звать из Claude Code и вручную, через `codex exec`. На практике это разваливается по трём причинам, и каждая из них здесь закрыта.
+You can call Codex from Claude Code by hand, with `codex exec`. In practice that falls apart for three reasons, and each one is addressed here.
 
-**Модель каждый раз пересобирает командную строку.** У `codex` несогласованные флаги: `--approve-for-me` конфликтует с `-s` и роняет запуск, а у `codex exec resume` нет ни `--cd`, ни `-s` — те же флаги, что работают в `codex exec`, там дают `unexpected argument`. Каждый самодельный вызов — лотерея. Здесь все флаги зашиты в один скрипт `codexctl`, а наружу выведены семь режимов и пять флагов.
+**The model rebuilds the command line every time.** Codex flags are not consistent with each other: `--approve-for-me` conflicts with `-s` and kills the run, and `codex exec resume` accepts neither `--cd` nor `-s` — the very flags that work in `codex exec` fail there with `unexpected argument`. Every hand-assembled invocation is a coin flip. Here all flags are baked into a single `codexctl` script, and only seven modes and five flags are exposed.
 
-**Прогон теряется.** Запущенный через `nohup` или `&` процесс отрывается от сессии: уведомления о завершении нет, статуса не видно, и обе стороны ждут давно закончившуюся работу. Здесь прогон всегда остаётся дочерним процессом, пишет структурный лог и сообщает о себе.
+**Runs get lost.** A process started with `nohup` or `&` is detached from the session: no completion notification, no visible status, and both sides keep waiting on work that finished long ago. Here a run always stays a child process, writes a structured event log, and reports back.
 
-**Непонятно, работает Codex или застрял.** «Процесс жив» ничего не говорит. `codexctl status` различает четыре исхода: **РАБОТАЕТ**, **МОЛЧИТ** (нет событий дольше трёх минут), **ГОТОВ**, **УПАЛ** и **ОБОРВАЛСЯ** — когда Codex умер, не закончив ход.
+**You cannot tell a working run from a stuck one.** "The process is alive" tells you nothing. `codexctl status` distinguishes five outcomes: **RUNNING**, **SILENT** (no events for over three minutes), **DONE**, **FAILED**, and **TRUNCATED** — Codex died mid-turn.
 
-## Установка
+## Install
 
 ```bash
 claude plugin marketplace add Agasper/claude-2-codex-harness
 claude plugin install codex-bridge@claude-2-codex-harness
 ```
 
-Перезапустите сессию, затем выполните `/codex-bridge:setup` — команда проверит зависимости и положит `codexctl` в `~/.local/bin`.
+Restart your session, then run `/codex-bridge:setup` — it checks the prerequisites and puts `codexctl` on your `PATH` at `~/.local/bin`.
 
-Нужны: Codex CLI (`npm install -g @openai/codex`) с выполненным `codex login`, Python 3, Git, Bash.
+Requires the Codex CLI (`npm install -g @openai/codex`) with `codex login` completed, plus Python 3, Git and Bash.
 
-## Что внутри
+## What's inside
 
-| Компонент | Что делает |
+| Component | What it does |
 |---|---|
-| `codexctl` | Скрипт-ядро. Все вызовы Codex идут только через него |
-| Скилл `codex-bridge` | Дисциплина работы: спека, запуск, наблюдение, приёмка |
-| Субагент `codex-runner` | Держит долгий прогон, видно в интерфейсе, что Codex занят |
-| `/codex-bridge:run` | Отдать задачу Codex |
-| `/codex-bridge:review` | Ревью текущих изменений силами Codex |
-| `/codex-bridge:status` | Что происходит прямо сейчас |
-| `/codex-bridge:result` | Итог прогона и что изменилось в репозитории |
-| `/codex-bridge:cancel` | Остановить прогон |
-| `/codex-bridge:setup` | Проверка окружения и установка `codexctl` |
+| `codexctl` | The core script. Every Codex invocation goes through it |
+| `codex-bridge` skill | The working discipline: spec, launch, monitoring, acceptance |
+| `codex-runner` subagent | Holds a long run so the UI shows Codex is busy |
+| `/codex-bridge:run` | Hand a task to Codex |
+| `/codex-bridge:review` | Have Codex review your current changes |
+| `/codex-bridge:status` | What is happening right now |
+| `/codex-bridge:result` | Run outcome and what changed in the repository |
+| `/codex-bridge:cancel` | Stop a run |
+| `/codex-bridge:setup` | Check prerequisites and install `codexctl` |
 
 ## codexctl
 
@@ -51,41 +51,43 @@ codexctl cancel  [--id ID]
 codexctl list
 ```
 
-Без `--id` команды работают с последним прогоном. Каждый прогон складывается в `~/.claude/codex-runs/<id>/`: спека, лог событий, финальный ответ, метаданные.
+Without `--id`, commands act on the most recent run. Each run is stored under `~/.claude/codex-runs/<id>/`: the spec, the event log, the final answer and metadata.
 
-## Права Codex
+Note that the plugin's own interface — the skill, the slash commands and `codexctl` output — is in Russian.
 
-Всё проверено экспериментами, а не взято из документации.
+## What Codex is allowed to do
 
-Codex работает в песочнице операционной системы (на macOS — seatbelt), поэтому ограничения не зависят от того, что решит модель. В режиме `run` он **может**: писать в каталог проекта, `/tmp` и `$TMPDIR`; читать весь диск; ходить в сеть; коммитить. И **не может** писать за пределы каталога проекта — попытка даёт `Operation not permitted`.
+Everything below was established by experiment, not read off a documentation page.
 
-Внутри проекта Codex может удалить что угодно, поэтому перед каждым прогоном `codexctl` ставит git-метку `codex-baseline-<время>` — точку отката и базу для diff при приёмке.
+Codex runs inside an OS-level sandbox (seatbelt on macOS), so the limits hold regardless of what the model decides. In `run` mode it **can** write to the project directory, `/tmp` and `$TMPDIR`; read the whole disk; reach the network; and create commits. It **cannot** write outside the project directory — attempts fail with `Operation not permitted`.
 
-Переменные окружения с префиксом `CLAUDE*` (среди них токен локального IPC Claude Code) вырезаются из окружения, которое наследует Codex. Остальное окружение — `PATH`, `JAVA_HOME`, переменные Python и прочее — передаётся нетронутым.
+Inside the project Codex can delete anything, so before every run `codexctl` creates a git tag `codex-baseline-<timestamp>` — a rollback point and the base for the acceptance diff.
 
-Встроенный классификатор рисков Codex (Guardian, флаг `--approve-for-me`) сознательно **не используется**: в контрольном прогоне он одобрил `rm -rf` каталога в домашней директории. Он снимает защиту песочницы, а не добавляет свою.
+Environment variables prefixed with `CLAUDE*` — including Claude Code's local IPC token — are stripped from the environment Codex inherits. Everything else (`PATH`, `JAVA_HOME`, Python variables and so on) is passed through untouched.
 
-## Настройка Codex
+Codex's built-in risk classifier (Guardian, the `--approve-for-me` flag) is deliberately **not** used: in a controlled run it approved an `rm -rf` of a directory in the user's home folder. It removes the sandbox's protection rather than adding its own.
 
-Плагин использует ваш `~/.codex/config.toml`. Полезные ключи:
+## Codex configuration
+
+The plugin uses your existing `~/.codex/config.toml`. Two settings are worth having:
 
 ```toml
-# читать CLAUDE.md проекта, если в нём нет AGENTS.md
+# read the project's CLAUDE.md when it has no AGENTS.md
 project_doc_fallback_filenames = ["CLAUDE.md"]
 
-# сеть внутри песочницы: без неё падают npm install, pip install, dotnet restore
+# network inside the sandbox: without it npm install, pip install and dotnet restore fail
 [sandbox_workspace_write]
 network_access = true
 ```
 
-Модель по умолчанию берётся с сервера для вашего аккаунта; зафиксировать её можно ключом `model` в том же файле или флагом `--model` на конкретный прогон.
+The default model comes from the server for your account; pin it with the `model` key in the same file, or with `--model` for a single run.
 
-## Разработка
+## Development
 
 ```bash
-tests/smoke.sh   # проверки, не требующие вызова Codex и не тратящие лимиты
+tests/smoke.sh   # checks that need no Codex call and burn no usage limits
 ```
 
-## Лицензия
+## License
 
 MIT
