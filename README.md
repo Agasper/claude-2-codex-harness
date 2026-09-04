@@ -119,7 +119,7 @@ The default model comes from the server for your account; pin it with the `model
 
 ### Reasoning effort
 
-Runs default to `xhigh`. This is deliberate: the model's own default is `low` — fine for a quick everyday chore, but the point of delegating is to get work you can accept, and shallow reasoning produces shallow work. Override per run with `--effort low|medium|high|xhigh|max`.
+Runs default to `high`. This is deliberate: the model's own default is `low` — fine for a quick everyday chore, but the point of delegating is to get work you can accept, and shallow reasoning produces shallow work. Override per run with `--effort low|medium|high|xhigh|max`.
 
 If you set `model_reasoning_effort` yourself in `~/.codex/config.toml`, the plugin imposes nothing and your setting is used.
 

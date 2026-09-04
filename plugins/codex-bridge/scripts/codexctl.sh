@@ -26,7 +26,7 @@ codexctl — run Codex through a fixed set of modes.
   codexctl cancel  [--id ID]      Stop a run.
   codexctl list                   Recent runs.
 
---effort is one of low, medium, high, xhigh, max. It defaults to xhigh, unless
+--effort is one of low, medium, high, xhigh, max. It defaults to high, unless
 your own ~/.codex/config.toml already sets model_reasoning_effort, which wins.
 
 There are no other flags. Sandbox, network, .git access and environment
@@ -151,8 +151,8 @@ for line in open(sys.argv[1],encoding='utf-8',errors='replace'):
 has_turn_completed() { grep -q '"type":"turn.completed"' "$1" 2>/dev/null; }
 
 # Reasoning effort for a run. An explicit --effort wins; otherwise the user's own
-# model_reasoning_effort in ~/.codex/config.toml is left alone; otherwise xhigh,
-# because shallow reasoning produces shallow objections.
+# model_reasoning_effort in ~/.codex/config.toml is left alone; otherwise high,
+# because the model's own default is low and shallow reasoning produces shallow work.
 resolve_effort() {
   local want="${1:-}"
   if [ -n "$want" ]; then
@@ -163,7 +163,7 @@ resolve_effort() {
   fi
   local cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
   grep -qE '^[[:space:]]*model_reasoning_effort[[:space:]]*=' "$cfg" 2>/dev/null && return 0
-  echo xhigh
+  echo high
 }
 
 # -u flags stripping Claude Code variables from the environment Codex inherits
