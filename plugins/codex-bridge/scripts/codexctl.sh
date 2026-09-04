@@ -12,19 +12,22 @@ usage() {
   cat <<'USAGE'
 codexctl — run Codex through a fixed set of modes.
 
-  codexctl run     --cwd DIR (--prompt TEXT | --prompt-file F) [--model M]
+  codexctl run     --cwd DIR (--prompt TEXT | --prompt-file F) [--model M] [--effort L]
       Task with write access. Blocks until done — run it in the background.
 
-  codexctl review  --cwd DIR [--base REF] [--prompt TEXT] [--model M]
+  codexctl review  --cwd DIR [--base REF] [--prompt TEXT] [--model M] [--effort L]
       Review with no write access. Blocks until done — run it in the background.
 
-  codexctl resume  --id ID (--prompt TEXT | --prompt-file F)
+  codexctl resume  --id ID (--prompt TEXT | --prompt-file F) [--effort L]
       Follow-up in the same Codex session. Blocks until done.
 
   codexctl status  [--id ID]      Run state: running / silent / done / failed.
   codexctl result  [--id ID]      Outcome: Codex's answer and what changed in the repo.
   codexctl cancel  [--id ID]      Stop a run.
   codexctl list                   Recent runs.
+
+--effort is one of low, medium, high, xhigh, max. It defaults to xhigh, unless
+your own ~/.codex/config.toml already sets model_reasoning_effort, which wins.
 
 There are no other flags. Sandbox, network, .git access and environment
 filtering are handled inside.
@@ -147,14 +150,30 @@ for line in open(sys.argv[1],encoding='utf-8',errors='replace'):
 
 has_turn_completed() { grep -q '"type":"turn.completed"' "$1" 2>/dev/null; }
 
+# Reasoning effort for a run. An explicit --effort wins; otherwise the user's own
+# model_reasoning_effort in ~/.codex/config.toml is left alone; otherwise xhigh,
+# because shallow reasoning produces shallow objections.
+resolve_effort() {
+  local want="${1:-}"
+  if [ -n "$want" ]; then
+    case "$want" in
+      low|medium|high|xhigh|max) echo "$want"; return 0;;
+      *) die "unknown --effort: $want (use low, medium, high, xhigh or max)";;
+    esac
+  fi
+  local cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
+  grep -qE '^[[:space:]]*model_reasoning_effort[[:space:]]*=' "$cfg" 2>/dev/null && return 0
+  echo xhigh
+}
+
 # -u flags stripping Claude Code variables from the environment Codex inherits
 unset_flags() { env | grep -oE '^CLAUDE[A-Z_]*' | sed 's/^/-u /' | tr '\n' ' '; }
 
 # ---------- core: a single run ----------
 
-# execute_run <run_dir> <cwd> <sandbox> <prompt_file> <model> <resume_thread|"">
+# execute_run <run_dir> <cwd> <sandbox> <prompt_file> <model> <resume_thread|""> <effort|"">
 execute_run() {
-  local RUN="$1" CWD="$2" SANDBOX="$3" PROMPT_FILE="$4" MODEL="$5" RESUME="$6"
+  local RUN="$1" CWD="$2" SANDBOX="$3" PROMPT_FILE="$4" MODEL="$5" RESUME="$6" EFFORT="${7:-}"
   local args=()
 
   if [ -n "$RESUME" ]; then
@@ -168,6 +187,7 @@ execute_run() {
     args+=(-c "sandbox_workspace_write.writable_roots=[\"$CWD/.git\"]")
   fi
   [ -n "$MODEL" ] && args+=(-m "$MODEL")
+  [ -n "$EFFORT" ] && args+=(-c "model_reasoning_effort=\"$EFFORT\"")
   git -C "$CWD" rev-parse --git-dir >/dev/null 2>&1 || args+=(--skip-git-repo-check)
   args+=(-o "$RUN/final.md")
   [ -n "$RESUME" ] && args+=("$RESUME")
@@ -230,13 +250,14 @@ summarize_changes() {
 # ---------- modes ----------
 
 cmd_run() {
-  local CWD="" PROMPT="" PROMPT_FILE="" MODEL="" SANDBOX="workspace-write" MODE="run" BASE=""
+  local CWD="" PROMPT="" PROMPT_FILE="" MODEL="" SANDBOX="workspace-write" MODE="run" BASE="" EFFORT=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --cwd) CWD="$2"; shift 2;;
       --prompt) PROMPT="$2"; shift 2;;
       --prompt-file) PROMPT_FILE="$2"; shift 2;;
       --model) MODEL="$2"; shift 2;;
+      --effort) EFFORT="$2"; shift 2;;
       --base) BASE="$2"; shift 2;;
       --readonly) SANDBOX="read-only"; MODE="review"; shift;;
       *) die "unknown flag: $1 (see codexctl --help)";;
@@ -246,6 +267,7 @@ cmd_run() {
   [ -d "$CWD" ] || die "no such directory: $CWD"
   CWD=$(cd "$CWD" && pwd)
   command -v codex >/dev/null 2>&1 || die "codex is not installed"
+  EFFORT=$(resolve_effort "$EFFORT") || exit 2
 
   local ID RUN
   ID="$(basename "$CWD")-$(date +%Y%m%d-%H%M%S)"
@@ -276,25 +298,27 @@ cmd_run() {
   fi
   json_set "$RUN/meta.json" id "$ID" cwd "$CWD" mode "$MODE" sandbox "$SANDBOX" \
            baseline_sha "$HEAD_SHA" baseline_tag "$TAG" started_at "$(date +%s)" state starting \
-           session_id "${CLAUDE_CODE_SESSION_ID:-}"
+           session_id "${CLAUDE_CODE_SESSION_ID:-}" effort "$EFFORT"
 
-  echo "run $ID | mode ${MODE} | sandbox ${SANDBOX} | project $CWD"
+  echo "run $ID | mode ${MODE} | sandbox ${SANDBOX} | effort ${EFFORT:-<from your config>} | project $CWD"
   [ -n "$TAG" ] && echo "rollback tag: $TAG"
   echo "---"
-  execute_run "$RUN" "$CWD" "$SANDBOX" "$RUN/prompt.md" "$MODEL" ""
+  execute_run "$RUN" "$CWD" "$SANDBOX" "$RUN/prompt.md" "$MODEL" "" "$EFFORT"
 }
 
 cmd_resume() {
-  local ID="" PROMPT="" PROMPT_FILE=""
+  local ID="" PROMPT="" PROMPT_FILE="" EFFORT=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --id) ID="$2"; shift 2;;
+      --effort) EFFORT="$2"; shift 2;;
       --prompt) PROMPT="$2"; shift 2;;
       --prompt-file) PROMPT_FILE="$2"; shift 2;;
       *) die "unknown flag: $1";;
     esac
   done
   local OLD; OLD=$(resolve_run "$ID") || exit 2
+  EFFORT=$(resolve_effort "$EFFORT") || exit 2
   local TID; TID=$(json_get "$OLD/meta.json" thread_id)
   [ -n "$TID" ] || die "run $(basename "$OLD") has no thread_id — nothing to continue"
   local CWD; CWD=$(json_get "$OLD/meta.json" cwd)
@@ -310,10 +334,10 @@ cmd_resume() {
            baseline_tag "$(json_get "$OLD/meta.json" baseline_tag)" \
            baseline_sha "$(json_get "$OLD/meta.json" baseline_sha)" \
            started_at "$(date +%s)" state starting parent "$(basename "$OLD")" \
-           session_id "${CLAUDE_CODE_SESSION_ID:-}"
+           session_id "${CLAUDE_CODE_SESSION_ID:-}" effort "$EFFORT"
   echo "follow-up $NEW_ID | Codex session $TID | project $CWD"
   echo "---"
-  execute_run "$RUN" "$CWD" "workspace-write" "$RUN/prompt.md" "" "$TID"
+  execute_run "$RUN" "$CWD" "workspace-write" "$RUN/prompt.md" "" "$TID" "$EFFORT"
 }
 
 cmd_status() {

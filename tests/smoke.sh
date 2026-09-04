@@ -21,6 +21,7 @@ check "run without --cwd is rejected"  2 bash "$CTL" run --prompt x
 check "run without a prompt is rejected" 2 bash "$CTL" run --cwd /tmp
 check "missing directory is rejected"  2 bash "$CTL" run --cwd /no/such/path --prompt x
 check "unknown run id is rejected"     2 bash "$CTL" status --id no-such-run
+check "bad --effort is rejected"       2 bash "$CTL" run --cwd /tmp --prompt x --effort turbo
 
 # --- run selection: a newer run from another session in another project must not
 # --- be picked up when --id is omitted (a real incident, 2026-09-02)

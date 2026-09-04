@@ -69,9 +69,9 @@ Requires the Codex CLI (`npm install -g @openai/codex`) with `codex login` compl
 ## codexctl
 
 ```
-codexctl run     --cwd DIR (--prompt TEXT | --prompt-file F) [--model M]
-codexctl review  --cwd DIR [--base REF] [--prompt TEXT] [--model M]
-codexctl resume  --id ID  (--prompt TEXT | --prompt-file F)
+codexctl run     --cwd DIR (--prompt TEXT | --prompt-file F) [--model M] [--effort L]
+codexctl review  --cwd DIR [--base REF] [--prompt TEXT] [--model M] [--effort L]
+codexctl resume  --id ID  (--prompt TEXT | --prompt-file F) [--effort L]
 codexctl status  [--id ID]
 codexctl result  [--id ID]
 codexctl cancel  [--id ID]
@@ -116,6 +116,12 @@ network_access = true
 ```
 
 The default model comes from the server for your account; pin it with the `model` key in the same file, or with `--model` for a single run.
+
+### Reasoning effort
+
+Runs default to `xhigh`. This is deliberate: the model's own default is `low` — fine for a quick everyday chore, but the point of delegating is to get work you can accept, and shallow reasoning produces shallow work. Override per run with `--effort low|medium|high|xhigh|max`.
+
+If you set `model_reasoning_effort` yourself in `~/.codex/config.toml`, the plugin imposes nothing and your setting is used.
 
 ## Development
 

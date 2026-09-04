@@ -20,9 +20,9 @@ All of that is baked into `codexctl` once. From the outside there are a few mode
 ## Modes
 
 ```
-codexctl run     --cwd DIR (--prompt TEXT | --prompt-file F) [--model M]
-codexctl review  --cwd DIR [--base REF] [--prompt TEXT] [--model M]
-codexctl resume  --id ID (--prompt TEXT | --prompt-file F)
+codexctl run     --cwd DIR (--prompt TEXT | --prompt-file F) [--model M] [--effort L]
+codexctl review  --cwd DIR [--base REF] [--prompt TEXT] [--model M] [--effort L]
+codexctl resume  --id ID (--prompt TEXT | --prompt-file F) [--effort L]
 codexctl status  [--id ID]
 codexctl result  [--id ID]
 codexctl cancel  [--id ID]
@@ -32,6 +32,8 @@ codexctl list
 If `codexctl` is not on PATH (`/codex-bridge:setup` was never run), call it by full path — `"${CLAUDE_PLUGIN_ROOT}/scripts/codexctl.sh"` — and suggest the user run `/codex-bridge:setup` once.
 
 `--id` is optional and normally unnecessary: `status`, `result`, `cancel` and `resume` pick the newest run **started by this session**, falling back to the newest run of the current project, and refusing outright when neither matches. Do not pass a working directory — there is no flag for it, and the binding is automatic on purpose. Reach for `--id` only when the user names a specific earlier run.
+
+`--effort` (`low`, `medium`, `high`, `xhigh`, `max`) is optional too. Runs default to `xhigh`, because Codex's own default for this model is `low` and shallow reasoning produces shallow work. Lower it when the user asks for speed or is watching usage limits, and say that you did; raise it to `max` only when they ask. If the user has set `model_reasoning_effort` in their own `~/.codex/config.toml`, that setting wins and no default is imposed.
 
 Sandbox, network and `.git` access, stripping of Claude Code variables, the rollback tag and the event log are all handled inside; there is no need to bring them up on every run.
 
