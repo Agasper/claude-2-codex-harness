@@ -162,6 +162,27 @@ check_effort() {
   esac
 }
 
+# Writable roots for a run: the project's .git plus whatever the user already
+# allows in their own config. Passing only .git would silently drop their
+# settings — the toolchain caches (~/.nuget, ~/.dotnet and friends) that live
+# outside the project and make builds fail or beg for escalation without them.
+writable_roots_arg() {
+python3 - "$1" <<'ROOTS'
+import json,os,sys
+proj=sys.argv[1]
+roots=[os.path.join(proj,'.git')]
+cfg=os.path.join(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'),'config.toml')
+try:
+    import tomllib
+    with open(cfg,'rb') as f: d=tomllib.load(f)
+    for r in (d.get('sandbox_workspace_write') or {}).get('writable_roots') or []:
+        if r not in roots: roots.append(r)
+except Exception:
+    pass
+print(json.dumps(roots))
+ROOTS
+}
+
 # -u flags stripping Claude Code variables from the environment Codex inherits
 unset_flags() { env | grep -oE '^CLAUDE[A-Z_]*' | sed 's/^/-u /' | tr '\n' ' '; }
 
@@ -180,7 +201,7 @@ execute_run() {
     args=(exec --json --cd "$CWD" -s "$SANDBOX")
   fi
   if [ "$SANDBOX" = "workspace-write" ]; then
-    args+=(-c "sandbox_workspace_write.writable_roots=[\"$CWD/.git\"]")
+    args+=(-c "sandbox_workspace_write.writable_roots=$(writable_roots_arg "$CWD")")
   fi
   [ -n "$MODEL" ] && args+=(-m "$MODEL")
   [ -n "$EFFORT" ] && args+=(-c "model_reasoning_effort=\"$EFFORT\"")
