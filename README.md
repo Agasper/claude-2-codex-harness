@@ -130,9 +130,25 @@ The plugin passes `--model` and `--effort` through and substitutes nothing of it
 Set a standing preference in `~/.codex/config.toml` rather than repeating flags:
 
 ```toml
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+model = "gpt-6-astra"
 ```
+
+A project can override that in its own `.codex/config.toml`, which Codex reads
+from the repository root once the project is trusted:
+
+```toml
+# <repo>/.codex/config.toml
+model = "gpt-5.6-sol"
+```
+
+Both layers are effective: with `gpt-6-astra` set globally, a run in a plain
+project uses Astra, while a run in a project carrying the file above uses
+`gpt-5.6-sol` instead.
+
+Note that `model_reasoning_effort` is a separate, global-or-project setting, not
+a per-model one. Leave it unset if you want each model to use the level its
+authors chose; set it only when you deliberately want the same level regardless
+of which model runs.
 
 Worth knowing when you choose: reasoning defaults differ per model, and some are
 low. `gpt-5.6-sol` defaults to `low`, while `gpt-6-astra`, `gpt-5.6-terra` and
