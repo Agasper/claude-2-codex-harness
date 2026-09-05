@@ -366,7 +366,8 @@ cmd_status() {
   echo "elapsed:  $(human_age $(( now - ${started:-$now} )))"
   echo "project:  $(json_get "$RUN/meta.json" cwd)"
   echo "latest:"
-  print_events "$RUN/run.jsonl" "$(( $(wc -l < "$RUN/run.jsonl" 2>/dev/null || echo 0) - 6 ))" 2>/dev/null \
+  # Look back far enough that housekeeping events cannot crowd out the real steps.
+  print_events "$RUN/run.jsonl" "$(( $(wc -l < "$RUN/run.jsonl" 2>/dev/null || echo 0) - 80 ))" 2>/dev/null \
     | grep -v '^__LINES__' | tail -5 | sed 's/^/  /'
   echo "log:      $RUN/run.jsonl"
 }
