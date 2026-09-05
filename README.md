@@ -8,6 +8,8 @@ A [Claude Code](https://claude.com/claude-code) plugin that hands implementation
 
 The plugin owns the mechanics of the handoff: launching Codex, watching the run, and taking the result back in a reviewable form. It deliberately does **not** decide which work goes to Codex — that split is yours to define.
 
+There is a mirror of this: [codex-2-claude-harness](https://github.com/Agasper/codex-2-claude-harness) runs the same construction in the opposite direction — Codex as the environment you work in, Claude Code called when you want it.
+
 ## Why it exists
 
 You can call Codex from Claude Code by hand, with `codex exec`. In practice that falls apart for three reasons, and each one is addressed here.
