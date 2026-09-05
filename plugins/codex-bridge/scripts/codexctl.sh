@@ -26,8 +26,8 @@ codexctl — run Codex through a fixed set of modes.
   codexctl cancel  [--id ID]      Stop a run.
   codexctl list                   Recent runs.
 
---effort is one of low, medium, high, xhigh, max. It defaults to high, unless
-your own ~/.codex/config.toml already sets model_reasoning_effort, which wins.
+--model and --effort are passed through untouched. Omit them and Codex uses its
+own defaults; set a standing preference in ~/.codex/config.toml.
 
 There are no other flags. Sandbox, network, .git access and environment
 filtering are handled inside.
@@ -150,20 +150,16 @@ for line in open(sys.argv[1],encoding='utf-8',errors='replace'):
 
 has_turn_completed() { grep -q '"type":"turn.completed"' "$1" 2>/dev/null; }
 
-# Reasoning effort for a run. An explicit --effort wins; otherwise the user's own
-# model_reasoning_effort in ~/.codex/config.toml is left alone; otherwise high,
-# because the model's own default is low and shallow reasoning produces shallow work.
-resolve_effort() {
+# Validates --effort if one was given. The plugin never substitutes a value of its
+# own: with no flag, the model's own default applies, and a standing preference
+# belongs in the user's ~/.codex/config.toml, not in here.
+check_effort() {
   local want="${1:-}"
-  if [ -n "$want" ]; then
-    case "$want" in
-      low|medium|high|xhigh|max) echo "$want"; return 0;;
-      *) die "unknown --effort: $want (use low, medium, high, xhigh or max)";;
-    esac
-  fi
-  local cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
-  grep -qE '^[[:space:]]*model_reasoning_effort[[:space:]]*=' "$cfg" 2>/dev/null && return 0
-  echo high
+  [ -n "$want" ] || return 0
+  case "$want" in
+    low|medium|high|xhigh|max|ultra) echo "$want";;
+    *) die "unknown --effort: $want (low, medium, high, xhigh, max, ultra; not every model supports every level)";;
+  esac
 }
 
 # -u flags stripping Claude Code variables from the environment Codex inherits
@@ -267,7 +263,7 @@ cmd_run() {
   [ -d "$CWD" ] || die "no such directory: $CWD"
   CWD=$(cd "$CWD" && pwd)
   command -v codex >/dev/null 2>&1 || die "codex is not installed"
-  EFFORT=$(resolve_effort "$EFFORT") || exit 2
+  EFFORT=$(check_effort "$EFFORT") || exit 2
 
   local ID RUN
   ID="$(basename "$CWD")-$(date +%Y%m%d-%H%M%S)"
@@ -298,9 +294,9 @@ cmd_run() {
   fi
   json_set "$RUN/meta.json" id "$ID" cwd "$CWD" mode "$MODE" sandbox "$SANDBOX" \
            baseline_sha "$HEAD_SHA" baseline_tag "$TAG" started_at "$(date +%s)" state starting \
-           session_id "${CLAUDE_CODE_SESSION_ID:-}" effort "$EFFORT"
+           session_id "${CLAUDE_CODE_SESSION_ID:-}" effort "$EFFORT" model "$MODEL"
 
-  echo "run $ID | mode ${MODE} | sandbox ${SANDBOX} | effort ${EFFORT:-<from your config>} | project $CWD"
+  echo "run $ID | mode ${MODE} | sandbox ${SANDBOX} | model ${MODEL:-<default>} | effort ${EFFORT:-<default>} | project $CWD"
   [ -n "$TAG" ] && echo "rollback tag: $TAG"
   echo "---"
   execute_run "$RUN" "$CWD" "$SANDBOX" "$RUN/prompt.md" "$MODEL" "" "$EFFORT"
@@ -318,7 +314,7 @@ cmd_resume() {
     esac
   done
   local OLD; OLD=$(resolve_run "$ID") || exit 2
-  EFFORT=$(resolve_effort "$EFFORT") || exit 2
+  EFFORT=$(check_effort "$EFFORT") || exit 2
   local TID; TID=$(json_get "$OLD/meta.json" thread_id)
   [ -n "$TID" ] || die "run $(basename "$OLD") has no thread_id — nothing to continue"
   local CWD; CWD=$(json_get "$OLD/meta.json" cwd)
@@ -334,7 +330,7 @@ cmd_resume() {
            baseline_tag "$(json_get "$OLD/meta.json" baseline_tag)" \
            baseline_sha "$(json_get "$OLD/meta.json" baseline_sha)" \
            started_at "$(date +%s)" state starting parent "$(basename "$OLD")" \
-           session_id "${CLAUDE_CODE_SESSION_ID:-}" effort "$EFFORT"
+           session_id "${CLAUDE_CODE_SESSION_ID:-}" effort "$EFFORT" model "$MODEL"
   echo "follow-up $NEW_ID | Codex session $TID | project $CWD"
   echo "---"
   execute_run "$RUN" "$CWD" "workspace-write" "$RUN/prompt.md" "" "$TID" "$EFFORT"

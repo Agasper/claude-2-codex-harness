@@ -117,11 +117,32 @@ network_access = true
 
 The default model comes from the server for your account; pin it with the `model` key in the same file, or with `--model` for a single run.
 
-### Reasoning effort
+### Model and reasoning effort
 
-Runs default to `high`. This is deliberate: the model's own default is `low` — fine for a quick everyday chore, but the point of delegating is to get work you can accept, and shallow reasoning produces shallow work. Override per run with `--effort low|medium|high|xhigh|max`.
+The plugin passes `--model` and `--effort` through and substitutes nothing of its own:
 
-If you set `model_reasoning_effort` yourself in `~/.codex/config.toml`, the plugin imposes nothing and your setting is used.
+| what you pass | what runs |
+|---|---|
+| neither | Codex's default model, at that model's default reasoning level |
+| `--model` only | that model, at **its own** default reasoning level |
+| both | exactly what you asked for |
+
+Set a standing preference in `~/.codex/config.toml` rather than repeating flags:
+
+```toml
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+```
+
+Worth knowing when you choose: reasoning defaults differ per model, and some are
+low. `gpt-5.6-sol` defaults to `low`, while `gpt-6-astra`, `gpt-5.6-terra` and
+`gpt-5.5` default to `medium`. Supported levels differ too — `low`, `medium`,
+`high` and `xhigh` are common, `max` and `ultra` only on some models. Run
+`codex debug models` for the current catalogue.
+
+On a control task, raising `gpt-5.6-sol` from its default to `xhigh` took 92
+seconds instead of 55 and spent 2581 reasoning tokens instead of 468 — worth it
+for a hard design question, wasteful for a routine chore.
 
 ## Development
 
